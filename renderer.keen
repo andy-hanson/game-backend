@@ -1,0 +1,68 @@
+import
+	keen/math/geom2d/aa-rect
+	keen/math/geom2d/circle
+	keen/math/geom2d/triangle
+
++renderer interface mut
+	| WARN: You *must* wrap any other drawing functions in this!
+	| Even if just `with-coordinate-system screen, screen, of ...`
+	with-coordinate-system void(screen aa-rect32, world-aa-rect aa-rect32, f void mut())
+	draw-image void(dest aa-rect32, image image-and-region)
+	draw-image-with-alpha void(dest aa-rect32, image image-and-region, alpha float32)
+	draw-image-rotated void(dest aa-rect32, image image-and-region, rotation float32)
+	draw-circle void(dest circle32, color rgba)
+	draw-rect void(dest aa-rect32, color rgba)
+	draw-triangle void(dest triangle32, color rgba)
+	draw-line-of-text void(dest aa-rect32, measure-text string, actual-text string, font-id nat, color rgba)
++coordinate-system record(screen aa-rect32, world aa-rect32)
++with-block void(a coordinate-system, f void mut()) renderer
+	with-coordinate-system the::renderer, a.screen, a.world, f
++draw-image void(dest aa-rect32, image image-and-region) renderer
+	draw-image the::renderer, dest, image
++draw-image-with-alpha void(dest aa-rect32, image image-and-region, alpha float32) renderer
+	draw-image-with-alpha the::renderer, dest, image, alpha
++draw-image-rotated void(dest aa-rect32, image image-and-region, rotation float32) renderer
+	draw-image-rotated the::renderer, dest, image, rotation
++draw-circle void(dest circle32, color rgba) renderer
+	draw-circle the::renderer, dest, color
++draw-rect void(dest aa-rect32, color rgba) renderer
+	draw-rect the::renderer, dest, color
++draw-triangle void(dest triangle32, color rgba) renderer
+	draw-triangle the::renderer, dest, color
+| Draw a single line of text.
+| Scales and centers the text within {dest}.
++draw-line-of-text void(dest aa-rect32, text string, font-id nat, color rgba) renderer
+	draw-line-of-text the::renderer, dest, text, text, font-id, color
++draw-line-of-text void(dest aa-rect32, measure-text string, actual-text string, font-id nat, color rgba) renderer
+	draw-line-of-text the::renderer, dest, measure-text, actual-text, font-id, color
+
++image-and-region record
+	image nat
+	source texture-region
+
+| For textures, +y is down, so {top} is less than {bottom}
++texture-region record
+	left nat16
+	right nat16
+	top nat16
+	bottom nat16
++width nat16(a texture-region) = a.right - a.left
++height nat16(a texture-region) = a.bottom - a.top
++new texture-region(left nat16, top nat16, width nat16, height nat16)
+	left: left
+	right: left + width
+	top: top
+	bottom: top + height
+
++rgba record(red float32, green float32, blue float32, alpha float32)
++new rgba(red float32, green float32, blue float32)
+	red, green, blue, 1
++black rgba() = 0, 0, 0
++white rgba() = 1, 1, 1
++as-nat8s (nat8, nat8, nat8, nat8)(a rgba)
+	- out-of-255 a.red
+	- out-of-255 a.green
+	- out-of-255 a.blue
+	- out-of-255 a.alpha
+-out-of-255 nat8(a float32)
+	clamp-to to::nat64 a * 255

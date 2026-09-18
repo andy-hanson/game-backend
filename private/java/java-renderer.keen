@@ -1,0 +1,197 @@
+import
+	com/badlogic/gdx/Files
+	com/badlogic/gdx/Gdx
+	com/badlogic/gdx/graphics/Camera
+	com/badlogic/gdx/graphics/Color
+	com/badlogic/gdx/graphics/g2d/BitmapFont
+	com/badlogic/gdx/graphics/g2d/BitmapFont$BitmapFontData
+	com/badlogic/gdx/graphics/g2d/freetype/FreeTypeFontGenerator
+	com/badlogic/gdx/graphics/g2d/freetype/FreeTypeFontGenerator$FreeTypeFontParameter
+	com/badlogic/gdx/graphics/g2d/GlyphLayout
+	com/badlogic/gdx/graphics/g2d/PolygonRegion
+	com/badlogic/gdx/graphics/g2d/PolygonSprite
+	com/badlogic/gdx/graphics/g2d/PolygonSpriteBatch
+	com/badlogic/gdx/graphics/g2d/TextureRegion
+	com/badlogic/gdx/graphics/GL20
+	com/badlogic/gdx/graphics/OrthographicCamera
+	com/badlogic/gdx/graphics/Pixmap
+	com/badlogic/gdx/graphics/Pixmap$Format
+	com/badlogic/gdx/graphics/Texture
+	com/badlogic/gdx/math/Vector3
+	keen/math/geom2d/aa-rect
+	keen/math/geom2d/circle
+	keen/math/geom2d/size2
+	keen/math/geom2d/triangle
+	keen/math/math
+	keen/math/vec
+	keen/java
+	keen/string/util
+	../../abstract-game
+	../../renderer
+
+java-renderer record java, mut, renderer case
+	batch PolygonSpriteBatch
+	images Texture[]
+	fonts BitmapFont[]
+	single-pixel-white Texture
+	circle-sprite PolygonSprite
+	in-coordinate-system mut bool
+
+new java-renderer(all-fonts string[], all-images image-info[]) global, java, unsafe
+	single-pixel-white =
+		pix = Pixmap 1, 1, RGBA8888
+		setColor pix, WHITE
+		fill pix
+		res = Texture pix
+		dispose pix
+		res
+	batch: PolygonSpriteBatch
+	images: for info in all-images
+		texture = Texture to info.path
+		validate-image info, (texture.getWidth.to, texture.getHeight.to)
+		texture
+	fonts: for path in all-fonts
+		create-font path
+	single-pixel-white: single-pixel-white
+	circle-sprite:
+		segments nat32 = 64
+		vertices float32 buffer = n-of (segments * 2 + 2), 0
+		vertices[0] := 0
+		vertices[1] := 0
+		anglestep float32 = 2 * pi / segments.to
+		for i in 0 .. segments
+			angle = anglestep * i.to
+			vertices[2 + i * 2] := angle.cos
+			vertices[2 + i * 2 + 1] := angle.sin
+		triangles int16 buffer = n-of segments * 3, 0
+		for i in 0 .. segments
+			triangles[i * 3] := 0
+			triangles[i * 3 + 1] := to i + 1
+			triangles[i * 3 + 2] := to (i + 1) % segments + 1
+		texture-region = TextureRegion single-pixel-white
+		res = PolygonSprite PolygonRegion texture-region, vertices, triangles
+		setOrigin res, 0, 0
+		res
+	in-coordinate-system: false
+
+-create-font BitmapFont(path string) global, java
+	do trusted
+	gen = FreeTypeFontGenerator internal files, path.to
+	finally dispose gen
+	param = FreeTypeFontParameter
+	param.size := 520
+	generateFont gen, param
+
+dispose void(a java-renderer) global, java, unsafe
+	for texture in a.images
+		dispose texture
+	for font in a.fonts
+		dispose font
+	dispose a.batch
+	dispose a.single-pixel-white
+
+render-frame void(a java-renderer, draw void mut()) global, java
+	forbid a.in-coordinate-system
+	do trusted
+	glClearColor gl, 0, 0, 0, 1
+	glClear gl, GL_COLOR_BUFFER_BIT
+	begin a.batch
+	finally
+		forbid a.in-coordinate-system
+		end a.batch
+	the renderer = a
+	draw[]
+
+draw-image void(a java-renderer, dest aa-rect32, image image-and-region) java
+	do trusted
+	assert a.in-coordinate-system
+	region_ = get-region a, image
+	draw a.batch, region_, dest.left, dest.bottom, dest.width, dest.height
+draw-image-with-alpha void(a java-renderer, dest aa-rect32, image image-and-region, alpha float32) java
+	assert a.in-coordinate-system
+	do trusted
+	setColor a.batch, (1, 1, 1, alpha).to
+	finally setColor a.batch, white.to
+	draw-image a, dest, image
+draw-image-rotated void(a java-renderer, dest aa-rect32, image image-and-region, rotation float32) java
+	assert a.in-coordinate-system
+	region_ = get-region a, image
+	w = dest.width
+	h = dest.height
+	trusted draw a.batch, region_, dest.left, dest.bottom, w / 2, h / 2, w, h, 1, 1, rotation * 180 / pi
+-get-region TextureRegion(a java-renderer, image image-and-region) java
+	s = image.source
+	trusted a.images[image.image], s.left.to::int32, s.top.to, s.width.to, s.height.to
+draw-circle void(a java-renderer, dest circle32, color rgba) java
+	assert a.in-coordinate-system
+	do trusted
+	setColor a.circle-sprite, color.to
+	finally setColor a.circle-sprite, white.to
+	rect = rect-containing dest
+	setPosition a.circle-sprite, rect.center.x, rect.center.y
+	setScale a.circle-sprite, dest.radius
+	draw a.circle-sprite, a.batch
+draw-rect void(a java-renderer, dest aa-rect32, color rgba) java
+	assert a.in-coordinate-system
+	do trusted
+	setColor a.batch, color.to
+	finally setColor a.batch, white.to
+	draw a.batch, a.single-pixel-white, dest.left, dest.bottom, dest.width, dest.height
+draw-triangle void(a java-renderer, dest triangle32, color rgba) java
+	assert a.in-coordinate-system
+	do trusted
+	setColor a.batch, color.to
+	finally setColor a.batch, white.to
+	vertices float32 buffer = dest.a.x, dest.a.y, dest.b.x, dest.b.y, dest.c.x, dest.c.y
+	triangles int16 buffer = 0, 1, 2
+	texture-region = TextureRegion a.single-pixel-white
+	poly = PolygonRegion texture-region, vertices, triangles
+	draw a.batch, poly, 0, 0
+draw-line-of-text void
+	a java-renderer
+	dest aa-rect32
+	measure0 string
+	actual0 string
+	font-id nat
+	color rgba
+do java
+	assert a.in-coordinate-system
+	measure = replace-unusual-characters measure0
+	actual = replace-unusual-characters actual0
+	do trusted
+	assert starts-with measure, actual
+	font = a.fonts[font-id]
+	setColor font, color.to
+	layout-size size2-32 =
+		layout = GlyphLayout
+		setText layout, font, measure.to
+		layout.width, layout.height + font.getAscent.abs + font.getDescent.abs
+	scale = scale-factor layout-size, dest.size
+	centered aa-rect32 = center: dest.center, size: layout-size * scale
+	original-scale size2-32 = font.getScaleX, font.getScaleY
+	setScale font.getData, scale
+	finally setScale font.getData, original-scale.width, original-scale.height
+	_ = draw font, a.batch, actual.to, centered.left, centered.top
+
+-replace-unusual-characters string(a string)
+	replace-all a, "…", "..."
+
+with-coordinate-system void(a java-renderer, screen aa-rect32, world-rect aa-rect32, f void mut()) java
+	forbid a.in-coordinate-system
+	a.in-coordinate-system := true
+	do trusted
+	end a.batch
+	camera = OrthographicCamera
+	setToOrtho camera, false, world-rect.width, world-rect.height
+	_ = set camera.position, world-rect.center.x, world-rect.center.y, 0
+	update camera
+	glViewport gl, screen.left.to, screen.bottom.to, screen.width.to, screen.height.to
+	setProjectionMatrix a.batch, camera.combined
+	begin a.batch
+	finally
+		end a.batch
+		begin a.batch
+		a.in-coordinate-system := false
+	f[]
+-to Color(a rgba) java
+	trusted a.red.to, a.green.to, a.blue.to, a.alpha.to

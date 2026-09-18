@@ -1,0 +1,79 @@
+import
+	keen/col/mut-queue
+	keen/io/time
+	keen/math/geom2d/size2
+	keen/js
+	../../input
+
+js-controller record mut
+	-inputs step-input mut-queue
+	-current-buttons mut button set
+	-get-screen-size size2-32 mut()
+
+setup-js-controller js-controller(get-screen-size size2-32 mut()) global, js
+	do trusted
+	res js-controller = (), (), get-screen-size
+
+	key-down = of::void event js-any
+		do unless event["repeat"].to or event["ctrlKey"].to
+		do if input = input-for-key to::symbol event["key"]
+		_ = call-property event, "preventDefault"
+		if button input
+			res.current-buttons ~:= input
+		res.inputs ~= monotime, get-screen-size[], res.current-buttons, input
+	_ = call-property js-global, "addEventListener", "keydown", key-down.to
+
+	key-up = of::void event js-any
+		do if input = input-for-key to::symbol event["key"]
+		if button input
+			res.current-buttons -:= input,
+		_ = call-property event, "preventDefault"
+	_ = call-property js-global, "addEventListener", "keyup", key-up.to
+
+	debug = of::void command js-any
+		res.inputs ~= monotime, get-screen-size[], res.current-buttons, command.to::string
+	js-global["debug"] := debug.to
+
+	res
+
+get step-input(a js-controller) global
+	dequeue a.inputs else monotime, a.get-screen-size[], a.current-buttons, ()
+
+| Keep in sync with 'input-for-key' in java-controller.keen
+-input-for-key input-trigger?(key symbol)
+	match key
+	as ArrowUp then up
+	as ArrowLeft then left
+	as ArrowDown then down
+	as ArrowRight then right
+	as w then up
+	as a then left
+	as s then down
+	as d then right
+	as " " then A
+	as Shift then B
+	as CapsLock then start
+	as Enter then start
+	as z then select
+	as x then select
+	as c then select
+	as v then select
+	as b then select
+	as n then select
+	as m then select
+	as "," then select
+	as "." then select
+	as "/" then select
+	as F1 then ()
+	as F2 then ()
+	as F3 then ()
+	as F4 then ()
+	as F5 then ()
+	as F6 then ()
+	as F7 then ()
+	as F8 then ()
+	as F9 then ()
+	as F10 then ()
+	as F11 then ()
+	as F12 then ()
+	else then unknown

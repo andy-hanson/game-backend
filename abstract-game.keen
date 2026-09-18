@@ -1,0 +1,33 @@
+import
+	keen/io/duration
+	keen/math/geom2d/size2
+	./audio
+	./input
+	./renderer
+
++abstract-game interface mut
+	title string()
+	all-fonts string[]()
+	all-images image-info[]()
+	all-musics string[]()
+	all-sounds string[]()
+	step step-result(input step-input)
+	draw void(renderer renderer, screen size2-32, now duration)
+
++image-info record
+	path string
+	size (nat, nat)
+
+~validate-image void(image image-info, actual (nat, nat))
+	image.size is actual else
+		log-error "Unexpected image size",
+			:: json
+			image: image.path
+			expected: image.size.to
+			actual: actual.to
+		unreachable
+
++step-result record
+	save json?
+	music music-effect?
+	sounds sound-details[]

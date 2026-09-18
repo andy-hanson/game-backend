@@ -1,0 +1,29 @@
+import
+	keen/io/duration
+
++music-effect union(play-music, pause-music, unpause-music)
++play-music record(music-id nat, fade-in duration)
++pause-music record
++unpause-music record
+
++sound-details record
+	| Index into the game's `all-sounds` array
+	sound-id nat
+	volume float32
+	pitch float32
+	pan float32
+	delay duration
+do
+	assert 0::float32 <= volume and volume <= 1
+	assert 0.5::float32 <= pitch and pitch <= 2
+	assert -1::float32 <= pan and pan <= 1
++new sound-details(sound-id nat)
+	sound-id: sound-id, volume: 1
++new sound-details(sound-id nat, volume float32)
+	sound-id, volume, 1
++new sound-details(sound-id nat, pitch float32)
+	sound-id: sound-id, volume: 1, pitch: pitch
++new sound-details(sound-id nat, volume float32, pitch float32)
+	sound-id: sound-id, volume: volume, pitch: pitch, pan: 0, delay: ()
++new sound-details(sound-id nat, delay duration)
+	sound-id: sound-id, volume: 1, pitch: 1, pan: 0, delay: delay

@@ -1,0 +1,155 @@
+import
+	com/badlogic/gdx/Gdx
+	com/badlogic/gdx/Input
+	com/badlogic/gdx/Input$Keys
+	com/badlogic/gdx/InputProcessor
+	keen/col/mut-queue
+	keen/io/time
+	keen/math/geom2d/size2
+	keen/java
+	keen/unsafe
+	net/java/games/input/Component
+	net/java/games/input/Component$Identifier$Axis
+	net/java/games/input/Component$Identifier$Button
+	net/java/games/input/Component$POV
+	net/java/games/input/Controller
+	net/java/games/input/ControllerEnvironment
+	../../input
+	./java-command-input
+
+controller-input record mut
+	-inputs step-input mut-queue
+	screen-size mut size2-32
+	-current-controller-buttons mut button set
+	-current-keyboard-buttons mut button set
+	-commands java-command-input
+| Unsafe because you must call {dispose}
+setup-input controller-input() global, java, unsafe
+	inputs step-input mut-queue = ()
+	res controller-input = inputs, (), (), (), setup-java-command-input
+	setInputProcessor input, input-processor res
+	res
+dispose void(a controller-input) global, java, unsafe
+	dispose a.commands
+get-input step-input(a controller-input) global, java
+	if command = get a.commands
+		monotime, a.screen-size, a.holding, command
+	else
+		poll a
+		dequeue a.inputs else monotime, a.screen-size, a.holding, ()
+-holding button set(a controller-input)
+	a.current-controller-buttons | a.current-keyboard-buttons
+
+###
+We use 2 separate libraries for input processing.
+The libGDX builtin InputProcessor works well for the keyboard but not for a controller.
+JInput works well for a controller but can't seem to find the keyboard.
+So we must combine both. They both write to the same `input mut-queue`.
+###
+
+-input-processor record mut, global, java, InputProcessor case
+	controller controller-input
+-keyDown bool(a input-processor, keycode int32) global, java
+	do if input = input-for-key keycode
+	a.controller.inputs ~= monotime, a.controller.screen-size, a.controller.current-keyboard-buttons, input
+	if button input
+		a.controller.current-keyboard-buttons ~:= input
+	true
+| Keep in sync with 'input-for-key' in js-controller.keen
+-input-for-key input-trigger?(key int32) global, java
+	do trusted
+	if key == LEFT or key == A or key == DPAD_LEFT
+		left
+	elif key == RIGHT or key == D or key == DPAD_RIGHT
+		right
+	elif key == UP or key == W or key == DPAD_UP
+		up
+	elif key == DOWN or key == S or key == DPAD_DOWN
+		down
+	elif key == SPACE
+		A
+	elif key == SHIFT_LEFT or key == SHIFT_RIGHT
+		B
+	elif key == CAPS_LOCK or key == ENTER
+		start
+	elif lower-row-keys[key]
+		select
+	elif ignored-keys[key]
+		()
+	else
+		unknown
+-lower-row-keys int32 set() java
+	trusted Z, X, C, V, B, N, M, COMMA, PERIOD, SLASH
+-ignored-keys int32 set() java
+	do trusted
+	- ALT_LEFT
+	- ALT_RIGHT
+	- CONTROL_LEFT
+	- CONTROL_RIGHT
+	- F1
+	- F2
+	- F3
+	- F4
+	- F5
+	- F6
+	- F7
+	- F8
+	- F9
+	- F10
+	- F11
+	- F12
+-keyUp bool(a input-processor, key int32) global, java
+	do if input = input-for-key key
+	if button input
+		a.controller.current-keyboard-buttons -:= input,
+	true
+-keyTyped bool(_ input-processor, _ char16) = false
+-touchDown bool(_ input-processor, _ int32, _ int32, _ int32, _ int32) = false
+-touchUp bool(_ input-processor, _ int32, _ int32, _ int32, _ int32) = false
+-touchCancelled bool(_ input-processor, _ int32, _ int32, _ int32, _ int32) = false
+-touchDragged bool(_ input-processor, _ int32, _ int32, _ int32) = false
+-mouseMoved bool(_ input-processor, _ int32, _ int32) = false
+-scrolled bool(_ input-processor, _ float32, _ float32) = false
+
+-poll void(a controller-input) global, java
+	new-buttons = current-state
+	for button in new-buttons
+		unless a.current-controller-buttons[button]
+			a.inputs ~= monotime, a.screen-size, a.current-controller-buttons, button
+	a.current-controller-buttons := new-buttons
+
+-current-state button set() global, java
+	do trusted
+	do with out in build
+	for controller in getControllers getDefaultEnvironment
+		_ = poll controller
+		for component in getComponents controller
+			value = getPollData component
+			id = getIdentifier component
+			if instanceof@Button id
+				if value > 0.5
+					out ~= to-button component.getName.to
+			elif id 'reference-equal POV
+				if button = dir-from-pov value
+					out ~= button
+
+-to-button button(s symbol)
+	match s
+	as "B" then A # The names seem to be backwards
+	as "A" then B
+	as "X" then select
+	as "Y" then select
+	as "Select" then select
+	as "Start" then start
+	else then unknown
+
+-dir-from-pov button?(value float) java
+	do trusted
+	if value == UP
+		up
+	elif value == DOWN
+		down
+	elif value == LEFT
+		left
+	elif value == RIGHT
+		right

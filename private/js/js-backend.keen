@@ -1,0 +1,46 @@
+import
+	keen/io/duration
+	keen/io/time
+	keen/js
+	keen/js/dom
+	keen/unsafe
+	../../abstract-backend
+	../../abstract-game
+	../../audio
+	./js-audio
+	./js-controller
+	./js-renderer
+
+js-main void(args backend-args, game abstract-game) global, js
+	do trusted
+	desired-msec-between-frames float = 1000 / args.desired-framerate.to
+	canvas = query! document, "canvas"
+	renderer js-renderer = canvas, game.all-images, game.all-fonts
+	controller = setup-js-controller {renderer.screen-size}
+	audio js-audio = game.all-musics, game.all-sounds
+	render-cb mut void mut(timestamp js-any) = gc-safe-value
+	last-time mut float = 0
+	render-cb := of timestamp-any
+		timestamp float = to timestamp-any
+		delta = timestamp - last-time
+		last-time := timestamp
+		now = monotime
+		if delta < desired-msec-between-frames
+			sleep milliseconds delta
+		step = step game, controller.get
+		if step.save
+			js-global["localStorage"]["save"] := to to-kid step.save
+		if step.music
+			match step.music
+			as play-music
+				play-music audio, step.music.music-id, step.music.fade-in
+			as pause-music
+				pause-music audio
+			as unpause-music
+				unpause-music audio
+		for sound in step.sounds
+			play-sound audio, sound
+		draw-one-frame renderer, of screen
+			draw game, renderer, screen, now
+		_ = call js-global["requestAnimationFrame"], render-cb.to
+	render-cb[0]

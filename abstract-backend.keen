@@ -1,0 +1,3 @@
++backend-args record
+	music bool
+	desired-framerate nat32

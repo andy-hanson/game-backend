@@ -1,0 +1,30 @@
+import
+	keen/io/file
+	keen/js
+	./abstract-backend
+	./abstract-game
+	./private/java/java-backend
+	./private/js/js-backend
+
+| This function only returns when the game is closed.
++backend-main void(backend-args backend-args, game abstract-game) global
+	if java
+		java-main backend-args, game
+	elif js
+		js-main backend-args, game
+	else
+		throw not-implemented
+
++load-save-file string?() global
+	if java
+		try
+			read-file "save.kid"
+		catch as path-not-found
+			()
+	elif js
+		do trusted
+		res = js-global["localStorage"]["save"]
+		unless res == undefined
+			to res
+	else
+		throw not-implemented

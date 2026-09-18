@@ -1,0 +1,122 @@
+import
+	keen/io/duration
+	keen/js/browser
+	keen/js
+	../../audio
+
+js-audio record mut
+	-audio-context js-any
+	-musics js-any[]
+	-sounds js-any[]
+	-cur-music mut cur-music?
+	-last-audio-context-time mut duration
+	-paused mut (nat, duration)?
+
+cur-music record mut
+	music-id nat
+	offset duration
+	nodes sound-or-music
+
+new js-audio(all-music string[], all-sounds string[]) global, js
+	audio-context = trusted call-new js-global["AudioContext"]
+	audio-context: audio-context
+	musics: for path in all-music
+		fetch-and-decode-audio audio-context, path
+	sounds: for path in all-sounds
+		fetch-and-decode-audio audio-context, path
+	cur-music: ()
+	last-audio-context-time: ()
+	paused: ()
+
+play-music void(a js-audio, music nat, fade-time duration) global, js
+	play-music a, music, fade-time, ()
+
+-play-music void(a js-audio, music nat, fade-time duration, offset duration) global, js
+	had-prev-music bool = if a.cur-music
+		fade-out-music a.audio-context, a.cur-music!.nodes, fade-time
+		a.cur-music := ()
+		true
+	audio-context-time = audio-context-time a
+	start-time-offset = if had-prev-music then fade-time
+	start-time = audio-context-time + start-time-offset
+	a.cur-music := music, offset, play-sound-or-music a.audio-context, a.musics[music],
+		loop: true
+		start-time: start-time
+		offset: offset
+		volume: 1
+		pitch: 1
+		pan: 0
+	a.last-audio-context-time := audio-context-time
+	a.paused := ()
+
+pause-music void(a js-audio) global, js
+	do trusted
+	do if music = a.cur-music
+	prev = a.last-audio-context-time
+	a.last-audio-context-time := a.audio-context.audio-context-time
+	duration = a.musics[music.music-id]["duration"].to::float.seconds
+	a.paused := music.music-id, (music.offset + a.last-audio-context-time - prev) % duration
+	to call-property music.nodes.source-node, "stop"
+	a.cur-music := ()
+
+-fade-out-music void(audio-context js-any, music sound-or-music, fade-time duration) global, js
+	do trusted
+	current-time = audio-context["currentTime"]
+	_ = call-property music.gain-node["gain"], "setValueAtTime", 1, current-time
+	stop-time = current-time + fade-time.seconds.to
+	_ = call-property music.gain-node["gain"], "linearRampToValueAtTime", 0, stop-time
+	_ = call-property music.source-node, "stop", stop-time
+
+unpause-music void(a js-audio) global, js
+	if paused-music, paused-offset = a.paused
+		play-music a, paused-music, (), paused-offset
+
+play-sound void(a js-audio, sound sound-details) global, js
+	_ = play-sound-or-music a.audio-context, a.sounds[sound.sound-id],
+		loop: false
+		start-time: ()
+		offset: ()
+		volume: sound.volume
+		pitch: sound.pitch
+		pan: sound.pan
+
+-audio-context-time duration(a js-audio) js = audio-context-time a.audio-context
+-audio-context-time duration(audio-context js-any) js
+	seconds to::float trusted audio-context["currentTime"]
+
+-sound-or-music record mut
+	source-node js-any
+	gain-node js-any
+-play-options record
+	loop bool
+	| When to start playing the music
+	start-time duration
+	| Offset in the music file
+	offset duration
+	volume float32
+	pitch float32
+	pan float32
+-play-sound-or-music sound-or-music(audio-context js-any, buffer js-any, options play-options) global, js
+	do trusted
+	source = call-property audio-context, "createBufferSource"
+	source["buffer"] := buffer
+	if options.loop then source["loop"] := true
+	source["playbackRate"]["value"] := options.pitch.to
+	node mut = source
+	if options.pan != 0
+		pan-node = call-property audio-context, "createStereoPanner"
+		pan-node["pan"]["value"] := options.pan.to
+		_ = call-property node, "connect", pan-node
+		node := pan-node
+	gain = call-property audio-context, "createGain"
+	gain["gain"]["value"] := options.volume.to
+	_ = call-property node, "connect", gain
+	node := gain
+	_ = call-property node, "connect", audio-context["destination"]
+	to call-property source, "start", options.start-time.seconds.to, options.offset.seconds.to
+	source, gain
+
+-fetch-and-decode-audio js-any(audio-context js-any, path string) global, js
+	do trusted
+	bytes nat8[] = fetch path
+	call-property audio-context, "decodeAudioData", bytes.to["buffer"]

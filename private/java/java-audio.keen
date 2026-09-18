@@ -1,0 +1,77 @@
+import
+	com/badlogic/gdx/Audio
+	com/badlogic/gdx/audio/Music
+	com/badlogic/gdx/audio/Sound
+	com/badlogic/gdx/Files
+	com/badlogic/gdx/Gdx
+	java/lang/String
+	keen/io/duration
+	keen/java
+	../../audio
+
+java-audio record mut, global, java
+	music-on bool
+	musics mut Music[]
+	sounds mut Sound[]
+	cur-music mut nat?
+	fade mut fade?
+-fade record
+	start-time duration
+	end-time duration
+	new-music nat
+new java-audio(music-on bool, musics string[], sounds string[]) global, java, unsafe
+	music-on: music-on
+	musics: for path in musics
+		res = newMusic audio, internal files, to::String path
+		setLooping res, true
+		res
+	sounds: for path in sounds
+		newSound audio, internal files, to::String path
+	cur-music: ()
+	fade: ()
+
+dispose void(a java-audio) global, java, unsafe
+	for sound in a.sounds
+		dispose sound
+	for music in a.musics
+		dispose music
+
+step void(a java-audio, now duration) global, java
+	do if fade = a.fade
+	do trusted
+	if now > fade.end-time
+		play-music-now a, fade.new-music
+		a.fade := ()
+	else
+		dt = now - fade.start-time
+		volume float = 1 - dt / (fade.end-time - fade.start-time)
+		setVolume a.musics[a.cur-music!], volume.to
+
+play-music void(a java-audio, music nat, now duration, fade-time duration) global, java
+	do if a.music-on
+	if a.cur-music
+		a.fade := now, now + fade-time, music
+	else
+		play-music-now a, music
+
+play-music-now void(a java-audio, music nat) global, java
+	do if a.music-on
+	do trusted
+	if cur = a.cur-music
+		stop a.musics[cur]
+	a.cur-music := music
+	m = a.musics[music]
+	setPosition m, 0
+	setVolume m, 1
+	play m
+
+pause-music void(a java-audio) global, java
+	if cur = a.cur-music
+		trusted pause a.musics[cur]
+
+unpause-music void(a java-audio) global, java
+	if a.music-on and cur = a.cur-music
+		trusted play a.musics[cur]
+
+play-sound void(a java-audio, sound sound-details) global, java
+	_ = trusted play a.sounds[sound.sound-id], sound.volume, sound.pitch, sound.pan

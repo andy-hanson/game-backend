@@ -1,0 +1,150 @@
+import
+	java/lang/Runtime
+	java/lang/Process
+	java/lang/System
+	java/io/InputStream
+	keen/col/mut-stack
+	keen/io/print
+
+java-command-input record mut
+	last-ran-a-command mut bool
+	buffer mut char8[]
+	buffer-pos mut nat32
+	command-history string mut-stack
+
+setup-java-command-input java-command-input() global, java, unsafe
+	waitFor exec getRuntime, ("sh", "-c", "stty raw -echo < /dev/tty") is 0
+	# Ensure that printed newlines bring the cursor back to the left
+	waitFor exec getRuntime, ("sh", "-c", "stty -icanon opost onlcr < /dev/tty") is 0
+	# _ = setProperty "line.separator", "\r\n"
+	true, (), 0, ()
+
+dispose void(_ java-command-input) global, java, unsafe
+	waitFor exec getRuntime, ("sh", "-c", "stty -raw echo </dev/tty") is 0
+
+user-exited record exception case
+show string(_ user-exited) = "Exited the program"
+
+get string?(a java-command-input) global, java
+	do trusted
+	if a.last-ran-a-command
+		print-no-newline "> "
+		a.last-ran-a-command := false
+	do if in.available > 0
+	ch = read in
+	match ch
+	as 3
+		throw user-exited
+	as 27
+		next = read in
+		next is 91 else todo
+		x = read in
+		match x
+		as 49
+			expect-in ";5"
+			match y = to::char8 to::nat8 read in
+			as "A" # ctrl + up
+				go-up a
+			as "B" # ctrl + down
+				()
+			as "C" # ctrl + right
+				while then try-move-right a
+			as "D" # ctrl + left
+				while then try-move-left a
+			else
+				log-error "Unexpected value {y}"
+				throw todo
+			()
+		as 51 # delete
+			read in is "~"::char8.to::nat8.to::int32
+			if a.buffer-pos < a.buffer.size
+				a.buffer := remove-at a.buffer, a.buffer-pos
+				print-delete a.buffer[a.buffer-pos .. end].to
+			()
+		as 65 # up
+			go-up a
+			()
+		as 66 # down
+			()
+		as 67 # right
+			_ = try-move-right a
+			()
+		as 68 # left
+			_ = try-move-left a
+			()
+		as 70 # end
+			while then try-move-right a
+			()
+		as 72 # home
+			while then try-move-left a
+			()
+		else
+			log-error "Unexpected code {x}"
+			throw todo
+	as 127
+		if a.buffer-pos != 0
+			a.buffer-pos -:= 1
+			a.buffer := remove-at a.buffer, a.buffer-pos
+			print-backspace a.buffer[a.buffer-pos .. end].to
+		()
+	else
+		char = ch.to::nat8.to::char8
+		if char == "\r"
+			print ""
+			a.last-ran-a-command := true
+			res string = a.buffer.to
+			a.buffer := ()
+			a.buffer-pos := 0
+			a.command-history ~= res
+			res
+		else
+			a.buffer := insert-at a.buffer, a.buffer-pos, char
+			a.buffer-pos +:= 1
+			print-no-newline a.buffer[a.buffer-pos - 1 .. end].to
+			print-move-cursor-left-by a.buffer.size - a.buffer-pos
+			()
+
+-expect-in void(s string) global, java, unsafe
+	for char in s.to::char8[]
+		read in is char.to::nat8.to::int32
+
+-go-up void(a java-command-input) global, java
+	do if prev = pop a.command-history
+	for _ in a.buffer
+		print-move-cursor-left
+	a.buffer := prev.to
+	a.buffer-pos := a.buffer.size
+	print-no-newline prev
+
+-try-move-left bool(a java-command-input) global, java
+	if a.buffer-pos != 0
+		print-move-cursor-left
+		a.buffer-pos -:= 1
+		true
+-try-move-right bool(a java-command-input) global, java
+	if a.buffer-pos < a.buffer.size
+		print-move-cursor-right
+		a.buffer-pos +:= 1
+		true
+
+-print-move-cursor-left void() global
+	print-no-newline "\u001b[D"
+
+-print-move-cursor-left-by void(n nat) global
+	unless n == 0
+		print-no-newline "\u001b[{n}D"
+
+-print-move-cursor-right void() global
+	print-no-newline "\u001b[C"
+
+-print-backspace void(rest-of-line string) global
+	print-move-cursor-left
+	print-delete rest-of-line
+
+-print-delete void(rest-of-line string) global
+	print-delete-rest-of-line
+	print-no-newline rest-of-line
+	print-move-cursor-left-by rest-of-line.size
+
+-print-delete-rest-of-line void() global
+	print-no-newline "\u001b[K"

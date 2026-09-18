@@ -1,0 +1,200 @@
+import
+	keen/js
+	keen/js/dom
+	keen/math/geom2d/circle
+	keen/math/geom2d/aa-rect
+	keen/math/geom2d/size2
+	keen/math/geom2d/triangle
+	keen/math/math
+	keen/math/vec
+	../../abstract-game
+	../../renderer
+
+js-renderer record js, mut, renderer case
+	-canvas js-any
+	-ctx js-any
+	-canvas-size mut size2-32
+	-images js-any[]
+screen-size size2-32(a js-renderer) js = a.canvas-size
+
+new js-renderer(canvas js-any, all-images image-info[], all-fonts string[]) global, js
+	do trusted
+	res js-renderer =
+		canvas: canvas
+		ctx: call-property canvas, "getContext", "2d"
+		canvas-size: get-canvas-size canvas
+		images: for image in all-images
+			img = load-image image.path
+			validate-image image, (img["width"].to, img["height"].to)
+			img
+	on-resize = of::void
+		dpr float32 = js-global["devicePixelRatio"].to
+		size = get-canvas-size canvas
+		res.canvas-size := size
+		canvas["width"] := to size.width * dpr
+		canvas["height"] := to size.height * dpr
+	on-resize[]
+	to call-property js-global, "addEventListener", "resize", on-resize.to
+	load-fonts all-fonts
+	res
+
+-load-fonts void(fonts string[]) global, js
+	do trusted
+	for index, path in with-index fonts
+		font-face = call-new js-global["FontFace"], "font{index}", "url({path})"
+		_ = await call-property font-face, "load"
+		_ = call-property document["fonts"], "add", font-face
+
+-get-canvas-size size2-32(canvas js-any) global, js
+	do trusted
+	dpr float32 = js-global["devicePixelRatio"].to
+	size = bounding-client-size canvas
+	size * dpr
+
+-bounding-client-size size2-32(element js-any) js
+	do trusted
+	rect = call-property element, "getBoundingClientRect"
+	rect["width"].to, rect["height"].to
+
+-load-image js-any(path string) js
+	do trusted
+	image = call-new js-global["Image"]
+	image["src"] := path.to
+	resolver void mut(resolve js-any, reject js-any) = of resolve, reject
+		image["onload"] := resolve
+		image["onerror"] := reject
+	_ = await call-new js-global["Promise"], resolver.to
+	image
+
+draw-image void(a js-renderer, dest aa-rect32, image image-and-region) js
+	source = image.source
+	sl = source.left
+	st = source.top
+	sw = source.width
+	sh = source.height
+	w = dest.width
+	h = dest.height
+	do trusted
+	x = dest.left
+	y = -dest.top
+	to call-property a.ctx, "drawImage", a.images[image.image], sl.to, st.to, sw.to, sh.to, x.to, y.to, w.to, h.to
+draw-image-with-alpha void(a js-renderer, dest aa-rect32, image image-and-region, alpha float32) js
+	do trusted
+	a.ctx["globalAlpha"] := alpha.to
+	finally a.ctx["globalAlpha"] := 1
+	draw-image a, dest, image
+draw-image-rotated void(a js-renderer, dest aa-rect32, image image-and-region, rotation float32) js
+	do trusted
+	ctx = a.ctx
+	to call-property ctx, "save"
+	finally to call-property ctx, "restore"
+	to call-property ctx, "translate", dest.center.x.to, (-dest.center.y).to
+	to call-property ctx, "rotate", (-rotation).to
+	source = image.source
+	sl = source.left
+	st = source.top
+	sw = source.width
+	sh = source.height
+	w = dest.width
+	h = dest.height
+	img = a.images[image.image]
+	to call-property ctx, "drawImage", img, sl.to, st.to, sw.to, sh.to, (-w / 2).to, (-h / 2).to, w.to, h.to
+draw-circle void(a js-renderer, dest circle32, color rgba) js
+	a.fill-color := color
+	trusted to call-property a.ctx, "beginPath"
+	trusted to call-property a.ctx, "arc", dest.center.x.to, (-dest.center.y).to, dest.radius.to, 0, (pi::float * 2).to
+	trusted to call-property a.ctx, "fill"
+draw-rect void(a js-renderer, dest aa-rect32, color rgba) js
+	a.fill-color := color
+	trusted to call-property a.ctx, "fillRect", dest.left.to, (-dest.top).to, dest.width.to, dest.height.to
+draw-triangle void(a js-renderer, dest triangle32, color rgba) js
+	ctx = a.ctx
+	a.fill-color := color
+	do trusted
+	to call-property ctx, "beginPath"
+	to call-property ctx, "moveTo", dest.a.x.to, (-dest.a.y).to
+	to call-property ctx, "lineTo", dest.b.x.to, (-dest.b.y).to
+	to call-property ctx, "lineTo", dest.c.x.to, (-dest.c.y).to
+	to call-property ctx, "closePath"
+	to call-property ctx, "fill"
+draw-line-of-text void(a js-renderer, dest aa-rect32, measure string, actual string, font-id nat, color rgba) js
+	# We loaded the font in {load-fonts}
+	ctx = a.ctx
+	do trusted
+	save ctx
+	finally restore ctx
+	a.fill-color := color
+	# The size doesn't really matter since we will scale it
+	ctx["font"] := "100px font{font-id}"
+	ctx["textAlign"] := "left"
+	ctx["textBaseline"] := "middle"
+	layout-size = measure-text ctx, measure
+	scale = scale-factor layout-size, dest.size
+	centered aa-rect32 = scale-by-origin (center: dest.center, size: layout-size * scale), (square 1 / scale)
+	scale ctx, square scale
+	_ = call-property ctx, "fillText", actual.to, centered.left.to, (-centered.center.y).to
+with-coordinate-system void(a js-renderer, screen aa-rect32, world-rect aa-rect32, f void mut()) js
+	ctx = a.ctx
+	save ctx
+	finally restore ctx
+	resetTransform ctx
+	translate ctx, (screen.left, -screen.bottom)
+	scale ctx, screen.size / world-rect.size
+	translate ctx, (-world-rect.left, world-rect.top)
+	f[]
+
+draw-one-frame void(a js-renderer, f void mut(screen size2-32)) js
+	ctx = a.ctx
+	ctx.imageSmoothingEnabled := false
+	save ctx
+	finally restore ctx
+	resetTransform ctx
+	translate ctx, (0, a.canvas-size.height.to)
+	f[a.canvas-size]
+
+canvas-context alias
+	js-any
+
+region Settings
+
+-set-imageSmoothingEnabled void(a canvas-context, value bool) js
+	trusted a["imageSmoothingEnabled"] := value.to
+
+region Transformations
+
+-save void(a canvas-context) js
+	trusted to call-property a, "save"
+-restore void(a canvas-context) js
+	trusted to call-property a, "restore"
+-resetTransform void(a canvas-context) js
+	trusted to call-property a, "resetTransform"
+-scale void(a canvas-context, scale size2-32) js
+	trusted to call-property a, "scale", scale.width.to, scale.height.to
+-translate void(a canvas-context, translation vec2-32) js
+	trusted to call-property a, "translate", translation.x.to, translation.y.to
+
+region Drawing
+
+-set-fill-color void(a js-renderer, color rgba) js
+	trusted a.ctx["fillStyle"] := to to-style color
+
+-measure-text size2-32(a canvas-context, text string) js
+	do trusted
+	measure = call-property a, "measureText", text.to
+	width: measure["width"].to
+	height: measure["fontBoundingBoxAscent"].to + measure["fontBoundingBoxDescent"].to
+
+-to-style string(a rgba)
+	r, g, b, alpha = as-nat8s a
+	"#{to-hex2 r}{to-hex2 g}{to-hex2 b}{to-hex2 alpha}"
+test
+	to-style (1, 0, 1, 1) is "#ff00ffff"
+
+-to-hex2 string(a nat8) = to-hex-with-padding a, 2
+-to-hex-with-padding string(a nat8, size nat8)
+	pad-left a.to-hex, size, "0"
+-pad-left string(a string, min-size nat32, padding char8)
+	if a.size < min-size
+		(n-of::char8[] min-size - a.size, padding).to ~~ a
+	else
+		a

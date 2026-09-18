@@ -1,0 +1,133 @@
+import
+	com/badlogic/gdx/ApplicationListener
+	com/badlogic/gdx/backends/lwjgl3/Lwjgl3Application
+	com/badlogic/gdx/backends/lwjgl3/Lwjgl3ApplicationConfiguration
+	com/badlogic/gdx/backends/lwjgl3/Lwjgl3WindowConfiguration
+	com/badlogic/gdx/Gdx
+	com/badlogic/gdx/Graphics
+	com/badlogic/gdx/Graphics$DisplayMode
+	com/badlogic/gdx/graphics/GL20
+	com/badlogic/gdx/Input
+	com/badlogic/gdx/Input$Keys
+	com/badlogic/gdx/utils/GdxRuntimeException
+	java/lang/Throwable
+	java/util/logging/Level
+	java/util/logging/Logger
+	keen/io/file
+	keen/io/time
+	keen/math/geom2d/size2
+	keen/java
+	keen/unsafe
+	../../abstract-backend
+	../../abstract-game
+	../../audio
+	./java-audio
+	./java-controller
+	./java-renderer
+
+java-main void(args backend-args, game abstract-game) global, java
+	do trusted
+	initial-screen-size size2-32 = get-initial-screen-size
+	listener = listener args, game
+	finally dispose listener
+	try
+		config Lwjgl3ApplicationConfiguration = ()
+		_ = setTitle config, game.title.to
+		setForegroundFPS config, args.desired-framerate.to
+		setWindowedMode config, initial-screen-size.width.to, initial-screen-size.height.to
+		_ = Lwjgl3Application listener, config
+	catch e as GdxRuntimeException
+		# Throw the inner exception to make stack traces easier to read
+		cause = e.getCause
+		throw if is-null cause then e else reinterpret-cast::exception e.getCause
+
+-get-initial-screen-size size2-32() global, java
+	do trusted
+	dm = getDisplayMode
+	dm-size size2-32 = dm.width.to, dm.height.to
+	dm-size * 0.75
+
+-listener record mut, global, java, ApplicationListener case
+	args backend-args
+	game mut abstract-game
+	controller mut controller-input?
+	audio mut java-audio?
+	renderer mut java-renderer?
+-listener listener(args backend-args, game abstract-game) global, java
+	args: args
+	game: game
+	controller: ()
+	audio: ()
+	renderer: ()
+-screen-size size2-32(a listener) global, java
+	a.controller!.screen-size
+
+-create void(a listener) java, global
+	do trusted
+	a.audio := music-on: a.args.music, musics: a.game.all-musics, sounds: a.game.all-sounds
+	a.controller := setup-input
+	a.renderer := a.game.all-fonts, a.game.all-images
+	# Without this, there are logs like 'Failed to open device (/dev/input/event17)'
+	# for every input that does not have a controller plugged in.
+	# For some reason this has to be done here in 'create' and not in 'main'
+	setLevel "net.java.games.input.ControllerEnvironment".getLogger, WARNING
+
+-dispose void(a listener) global, java
+	do trusted
+	if r = a.renderer
+		dispose r
+		a.renderer := ()
+	if a.audio
+		dispose a.audio!
+		a.audio := ()
+	if a.controller
+		dispose a.controller!
+		a.controller := ()
+
+-render void(a listener) global, java
+	do trusted
+	now = monotime
+	step-result = step a.game, get-input a.controller!
+
+	if step-result.save
+		write-file "save.kid", to-kid step-result.save
+
+	if effect = step-result.music
+		match effect
+		as play-music
+			play-music a.audio!, effect.music-id, now, effect.fade-in
+		as pause-music
+			pause-music a.audio!
+		as unpause-music
+			unpause-music a.audio!
+
+	if isKeyJustPressed input, F11
+		enter-or-exit-fullscreen
+	elif isKeyJustPressed input, ESCAPE and isFullscreen graphics
+		exit-fullscreen
+
+	for sound in step-result.sounds
+		play-sound a.audio!, sound
+
+	step a.audio!, now
+
+	glClearColor gl, 0, 0, 0, 1
+	glClear gl, GL_COLOR_BUFFER_BIT
+
+	render-frame a.renderer!, {draw a.game, a.renderer!, a.screen-size, now}
+
+-enter-or-exit-fullscreen void() global, java
+	do trusted
+	if isFullscreen graphics
+		exit-fullscreen
+	else
+		_ = setFullscreenMode graphics, getDisplayMode graphics, getMonitor graphics
+
+-exit-fullscreen void() global, java
+	size = get-initial-screen-size
+	assert trusted setWindowedMode graphics, size.width.to, size.height.to
+
+-resize void(a listener, width int32, height int32) global, java
+	a.controller!.screen-size := width.to, height.to
+-pause void(_ listener) = ()
+-resume void(_ listener) = ()

@@ -1,0 +1,22 @@
+import
+	keen/io/duration
+	keen/math/geom2d/size2
+
++step-input record
+	now duration
+	screen-size size2-32
+	holding button set
+	trigger input-trigger?
++input-trigger union
+	button
+	string # For debug commands
++button enum
+	A
+	B
+	left
+	right
+	down
+	up
+	select
+	start
+	unknown
